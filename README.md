@@ -132,6 +132,33 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
+### Frontend Setup
+```bash
+cd ui
+npm install
+npm run dev
+```
+
+### Frontend Production Build
+```bash
+cd ui
+npm install
+npm run build
+```
+
+### Backend API Setup
+```bash
+python -m pip install -r backend/requirements.txt
+python backend/api/main.py
+```
+
+### Frontend / Backend Auth
+If you enable `PEREGRINE_API_KEY` for the backend, set `VITE_API_KEY` in `ui/.env` or use the example file:
+```bash
+cp ui/.env.example ui/.env
+# Edit ui/.env to set VITE_API_KEY
+```
+
 ### Windows Setup (for Unreal + AirSim)
 1. Clone repo to `C:\Users\PC\Desktop\Project Peregrine`
 2. Install Unreal Engine 5 (Epic Games Launcher)

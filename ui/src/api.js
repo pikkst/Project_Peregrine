@@ -1,13 +1,23 @@
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-const WS   = BASE.replace(/^http/, 'ws')
+const API_KEY = import.meta.env.VITE_API_KEY || ''
+const WS = BASE.replace(/^http/, 'ws')
+
+function authHeaders() {
+  return API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {}
+}
 
 export const WS_LOGS_URL      = `${WS}/ws/logs`
 export const WS_TELEMETRY_URL = `${WS}/ws/telemetry`
 
 async function request(method, path, body) {
+  const headers = {
+    ...authHeaders(),
+    ...(body ? { 'Content-Type': 'application/json' } : {}),
+  }
+
   const res = await fetch(`${BASE}${path}`, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: Object.keys(headers).length ? headers : undefined,
     body: body ? JSON.stringify(body) : undefined,
   })
   if (!res.ok) throw new Error(`${method} ${path} → ${res.status}`)
@@ -49,8 +59,11 @@ export const api = {
     const fd = new FormData()
     fd.append('label', label)
     for (const f of files) fd.append('files', f)
-    return fetch(`${BASE}/api/ml/checkpoints/upload`, { method: 'POST', body: fd })
-      .then(r => r.json())
+    return fetch(`${BASE}/api/ml/checkpoints/upload`, {
+      method: 'POST',
+      headers: Object.keys(authHeaders()).length ? authHeaders() : undefined,
+      body: fd,
+    }).then(r => r.json())
   },
 
   // Hardware — board connection
