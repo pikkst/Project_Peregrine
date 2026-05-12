@@ -54,12 +54,12 @@ ros2 --version
 - Windows 10/11
 - Epic Games Launcher
 - Visual Studio 2022 (with C++ development tools)
-- Unreal Engine 5.2+
+- Unreal Engine 4.27
 
 ### Unreal Engine Installation
 
 1. Install Epic Games Launcher from https://www.epicgames.com/store/en-US/download
-2. Install Unreal Engine 5.2+ through the launcher
+2. Install Unreal Engine 4.27 through the launcher
 3. Launch Unreal Engine once to complete installation
 
 ### AirSim Plugin Setup

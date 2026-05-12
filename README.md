@@ -101,7 +101,7 @@ Project Peregrine/
 | Python           | 3.10 (+ pip/venv)                            |
 | Build system     | colcon, CMake, GCC 11                       |
 | ML frameworks    | PyTorch, CUDA 11.x (optional), TensorRT      |
-| Simulation       | Unreal Engine 5, AirSim plugin               |
+| Simulation       | Unreal Engine 4.27, AirSim plugin               |
 | Image transport  | ROS 2 image_transport, compressed_depth      |
 
 ### Quick Install (Ubuntu/WSL2)
@@ -161,7 +161,7 @@ cp ui/.env.example ui/.env
 
 ### Windows Setup (for Unreal + AirSim)
 1. Clone repo to `C:\Users\PC\Desktop\Project Peregrine`
-2. Install Unreal Engine 5 (Epic Games Launcher)
+2. Install Unreal Engine 4.27 (Epic Games Launcher)
 3. Build AirSim from source or use prebuilt plugin in `unreal/AirSim/`
 4. Open `Peregrine.uproject`, enable AirSim plugin
 5. Use WSL2 for ROS 2 — bridge AirSim to ROS 2 via TCP/ROS bridge in `ros2_ws/src/sim/`
@@ -259,7 +259,7 @@ Each agent is a standalone ROS 2 package with its own `package.xml`, `CMakeLists
 ## Unreal Engine + AirSim Setup
 
 ### Prerequisites
-- Epic Games Launcher + Unreal Engine 5 (5.2+ recommended)
+- Epic Games Launcher + Unreal Engine 4.27
 - AirSim compiled plugin or binary release
 
 ### Build AirSim (recommended)

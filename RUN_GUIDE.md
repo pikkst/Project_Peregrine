@@ -43,7 +43,7 @@ Expected packages: `nav_agent`, `savepoint_agent`, `mission_agent`, `fusion`, `s
 ## 2. Start Unreal + AirSim
 
 ### Prerequisites (Windows)
-- Unreal Engine 5.2+ installed via Epic Games Launcher
+- Unreal Engine 4.27 installed via Epic Games Launcher
 - AirSim plugin at `unreal/AirSim/`
 
 ### Steps
