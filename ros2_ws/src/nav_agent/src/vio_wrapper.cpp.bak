@@ -1,0 +1,206 @@
+/**************************************************************************
+ * vio_wrapper.cpp - Full VIO Implementation
+ * ORB/SIFT Stereo | IMU Gravity Compensation | Kalman Filter
+ **************************************************************************/
+
+#include <iostream>
+#include <chrono>
+#include <string>
+#include <cmath>
+#include <deque>
+#include <algorithm>
+#include <mutex>
+#include <Eigen/Dense>
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/image.hpp"
+#include "sensor_msgs/msg/imu.hpp"
+#include "nav_msgs/msg/odometry.hpp"
+#include "tf2_ros/transform_broadcaster.h"
+#include "cv_bridge/cv_bridge.h"
+#include "image_transport/image_transport.hpp"
+#include "opencv2/opencv.hpp"
+#include "opencv2/features2d.hpp"
+#include "opencv2/calib3d.hpp"
+using namespace std::chrono_literals;
+
+class PoseKalmanFilter {
+public:
+    PoseKalmanFilter() {
+        const int n = 9;
+        x_ = Eigen::VectorXd::Zero(n);
+        P_ = Eigen::MatrixXd::Identity(n, n) * 1.0;
+        P_(3,3)=P_(4,4)=P_(5,5)=10.0; P_(6,6)=P_(7,7)=P_(8,8)=5.0;
+        Q_ = Eigen::MatrixXd::Identity(n, n);
+        Q_.block<3,3>(0,0)*=0.01; Q_.block<3,3>(3,3)*=0.1; Q_.block<3,3>(6,6)*=0.001;
+        R_vision_ = Eigen::MatrixXd::Identity(6,6)*0.05; R_imu_ = Eigen::MatrixXd::Identity(6,6)*0.5;
+        dt_ = 0.02;
+    }
+    void predict(const Eigen::Vector3d& accel, const Eigen::Vector3d& gyro, double dt) {
+        dt_ = dt; if(dt_<=0||dt_>1) dt_=0.02;
+        Eigen::Vector3d p=x_.segment<3>(0), v=x_.segment<3>(3), bg=x_.segment<3>(6);
+        Eigen::Vector3d g_w(0.0,0.0,-9.81);
+        p += v*dt_ + 0.5*(accel+g_w)*dt_*dt_; v += (accel+g_w)*dt_;
+        if(v.norm()>10.0) v*=10.0/v.norm();
+        x_.segment<3>(0)=p; x_.segment<3>(3)=v; x_.segment<3>(6)=bg;
+        Eigen::MatrixXd F=Eigen::MatrixXd::Identity(9,9);
+        F.block<3,3>(0,3)=Eigen::MatrixXd::Identity(3,3)*dt_;
+        P_ = F*P_*F.transpose() + Q_*dt_; P_=0.5*(P_+P_.transpose());
+    }
+    void updateVision(const Eigen::VectorXd& pos, const Eigen::VectorXd& rpy) {
+        Eigen::VectorXd z=Eigen::VectorXd::Zero(6);
+        z.segment<3>(0)=pos; z.segment<3>(3)=rpy;
+        Eigen::MatrixXd H=Eigen::MatrixXd::Zero(6,9);
+        H.block<3,3>(0,0)=Eigen::MatrixXd::Identity(3,3);
+        Eigen::VectorXd y=z-H*x_; Eigen::MatrixXd S=H*P_*H.transpose()+R_vision_;
+        Eigen::MatrixXd K=P_*H.transpose()*S.inverse(); x_+=K*y;
+        Eigen::MatrixXd I=Eigen::MatrixXd::Identity(9,9);
+        P_ = (I-K*H)*P_*(I-K*H).transpose() + K*R_vision_*K.transpose(); P_=0.5*(P_+P_.transpose());
+    }
+    void updateImu(const Eigen::VectorXd& a, const Eigen::VectorXd& g) {
+        Eigen::VectorXd z=Eigen::VectorXd::Zero(6);
+        z.segment<3>(0)=a; z.segment<3>(3)=g;
+        Eigen::MatrixXd H=Eigen::MatrixXd::Zero(6,9);
+        H.block<3,3>(3,6)=Eigen::MatrixXd::Identity(3,3);
+        Eigen::VectorXd y=z-H*x_; Eigen::MatrixXd S=H*P_*H.transpose()+R_imu_;
+        Eigen::MatrixXd K=P_*H.transpose()*(S+Eigen::MatrixXd::Identity(6,6)*1e-6).inverse();
+        x_+=K*y; P_-=K*H*P_; P_=0.5*(P_+P_.transpose());
+    }
+    Eigen::Vector3d getPosition() const { return x_.segment<3>(0); }
+    Eigen::Vector3d getVelocity() const { return x_.segment<3>(3); }
+    Eigen::Vector3d getGyroBias() const { return x_.segment<3>(6); }
+    void reset(const Eigen::Vector3d& pos) { x_.segment<3>(0)=pos; x_.segment<3>(3).setZero(); P_=Eigen::MatrixXd::Identity(9,9)*0.1; P_.block<3,3>(6,6)*=5.0; }
+private:
+    int n_; Eigen::VectorXd x_; Eigen::MatrixXd P_, Q_, R_vision_, R_imu_; double dt_;
+};
+
+class VIOWrapper : public rclcpp::Node {
+public:
+    VIOWrapper() : Node("vio_wrapper"), image_transport_(std::make_shared<image_transport::ImageTransport>(this)) {
+        RCLCPP_INFO(this->get_logger(), "VIO: ORB SIFT Stereo IMU Kalman");
+        declare_parameter("stereo_baseline", 0.11); declare_parameter("focal_length", 512.0);
+        declare_parameter("feature_detector", "ORB"); declare_parameter("max_features", 500);
+        declare_parameter("min_matches", 8); declare_parameter("ransac_threshold", 1.0);
+        declare_parameter("imu_gravity_compensation", true);
+        stereo_baseline_=get_parameter("stereo_baseline").as_double(); focal_length_=get_parameter("focal_length").as_double();
+        max_features_=get_parameter("max_features").as_int(); min_matches_=get_parameter("min_matches").as_int();
+        ransac_thresh_=get_parameter("ransac_threshold").as_double(); gravity_comp_=get_parameter("imu_gravity_compensation").as_bool();
+        K_=(cv::Mat_<double>(3,3)<<focal_length_,0.0,320.0,0.0,focal_length_,240.0,0.0,0.0,1.0);
+        dist_coeffs_=cv::Mat::zeros(5,1,CV_64F);
+        std::string dt=get_parameter("feature_detector").as_string();
+        if (dt=="SIFT") { detector_=cv::SIFT::create(max_features_); RCLCPP_INFO(this->get_logger(),"SIFT"); }
+        else { detector_=cv::ORB::create(max_features_); matcher_=cv::BFMatcher::create(cv::NORM_HAMMING,false); RCLCPP_INFO(this->get_logger(),"ORB"); }
+        image_sub_left_=image_transport_->create_subscription<sensor_msgs::msg::Image>("/airsim/camera/front_left/image_raw",rclcpp::SensorDataQoS(),std::bind(&VIOWrapper::imageLeftCallback,this,std::placeholders::_1));
+        image_sub_right_=image_transport_->create_subscription<sensor_msgs::msg::Image>("/airsim/camera/front_right/image_raw",rclcpp::SensorDataQoS(),std::bind(&VIOWrapper::imageRightCallback,this,std::placeholders::_1));
+        imu_sub_=this->create_subscription<sensor_msgs::msg::Imu>("/airsim/imu",rclcpp::SensorDataQoS(),std::bind(&VIOWrapper::imuCallback,this,std::placeholders::_1));
+        odom_pub_=this->create_publisher<nav_msgs::msg::Odometry>("/vio/odom",10);
+        tf_broadcaster_=std::make_unique<tf2_ros::TransformBroadcaster>(this);
+        vio_thread_=std::thread(&VIOWrapper::runVIO,this);
+        RCLCPP_INFO(this->get_logger(),"Ready");
+    }
+    ~VIOWrapper(){running_=false;if(vio_thread_.joinable())vio_thread_.join();}
+private:
+    struct ImuData{rclcpp::Time timestamp;Eigen::Vector3d accel,gyro;};
+    void imageLeftCallback(const sensor_msgs::msg::Image::SharedPtr msg){
+        std::lock_guard<std::mutex> l(buffer_mutex_);try{left_buffer_=cv_bridge::toCvCopy(msg,sensor_msgs::image_encodings::MONO8)->image.clone();}catch(...){RCLCPP_ERROR(this->get_logger(),"cv_bridge");}
+    }
+    void imageRightCallback(const sensor_msgs::msg::Image::SharedPtr msg){
+        std::lock_guard<std::mutex> l(buffer_mutex_);try{right_buffer_=cv_bridge::toCvCopy(msg,sensor_msgs::image_encodings::MONO8)->image.clone();}catch(...){RCLCPP_ERROR(this->get_logger(),"cv_bridge");}
+    }
+    void imuCallback(const sensor_msgs::msg::Imu::SharedPtr msg){
+        std::lock_guard<std::mutex> l(imu_mutex_);ImuData imu;imu.timestamp=msg->header.stamp;
+        imu.accel=Eigen::Vector3d(msg->linear_acceleration.x,msg->linear_acceleration.y,msg->linear_acceleration.z);
+        imu.gyro=Eigen::Vector3d(msg->angular_velocity.x,msg->angular_velocity.y,msg->angular_velocity.z);
+        if(gravity_comp_&&gravity_initialized_)imu.accel=imu.accel-gravity_world_;
+        imu_buffer_.push_back(imu);if(imu_buffer_.size()>1000)imu_buffer_.pop_front();last_imu_=imu;imu_count_++;
+    }
+    void runVIO(){
+        rclcpp::Rate rate(30);Eigen::Vector3d position=Eigen::Vector3d::Zero();Eigen::Vector3d velocity=Eigen::Vector3d::Zero();
+        Eigen::Matrix3d rotation=Eigen::Matrix3d::Identity();Eigen::Quaterniond orientation(1,0,0,0);
+        cv::Mat prev_left,prev_right;std::vector<cv::Point2f> prev_left_pts;bool first_frame=true;
+        gravity_world_=Eigen::Vector3d(0,0,-9.81);gravity_initialized_=false;int vio_cycles=0,successful_tracks=0;
+        while(rclcpp::ok()&&running_){
+            auto cycle_start=this->now();cv::Mat left_img,right_img;bool images_ready=false;
+            {std::lock_guard<std::mutex> l(buffer_mutex_);
+                if(!left_buffer_.empty()&&!right_buffer_.empty()){left_img=left_buffer_.clone();right_img=right_buffer_.clone();images_ready=true;}}
+            if(!images_ready){rate.sleep();continue;}
+            std::vector<cv::KeyPoint> kpts_left,kpts_right;cv::Mat desc_left,desc_right;
+            detector_->detectAndCompute(left_img,cv::noArray(),kpts_left,desc_left);
+            detector_->detectAndCompute(right_img,cv::noArray(),kpts_right,desc_right);
+            std::vector<cv::DMatch> stereo_matches;
+            stereoMatching(left_img,right_img,kpts_left,kpts_right,desc_left,desc_right,stereo_matches);
+            std::vector<cv::Point2f> left_pts,right_pts;for(const auto& m:stereo_matches){left_pts.push_back(kpts_left[m.queryIdx].pt);right_pts.push_back(kpts_right[m.trainIdx].pt);}
+            int num_stereo_matches=left_pts.size();
+            std::vector<cv::Point2f> tracked_left_pts;std::vector<uchar> track_status;std::vector<float> track_err;
+            if(!first_frame&&!prev_left.empty()){cv::calcOpticalFlowPyrLK(prev_left,left_img,prev_left_pts,tracked_left_pts,track_status,track_err,cv::Size(21,21),3,cv::TermCriteria(cv::TermCriteria::COUNT+cv::TermCriteria::EPS,30,0.01),0,0.001);
+                std::vector<cv::Point2f> good_new,good_old;for(size_t i=0;i<track_status.size();i++){if(track_status[i]&&track_err[i]<55){good_new.push_back(tracked_left_pts[i]);good_old.push_back(prev_left_pts[i]);}}tracked_left_pts=good_new;}
+            Eigen::Vector3d rpy=Eigen::Vector3d::Zero();Eigen::Vector3d tvec=Eigen::Vector3d::Zero();bool pose_valid=false;
+            if(num_stereo_matches>=min_matches_){
+                cv::Mat mask;cv::Mat E=cv::findEssentialMat(left_pts,right_pts,focal_length_,cv::Point2d(320.0,240.0),cv::RANSAC,0.999,ransac_thresh_,mask);
+                cv::Mat R_cv,t_cv;int inliers=cv::recoverPose(E,left_pts,right_pts,R_cv,t_cv,focal_length_,cv::Point2d(320.0,240.0),mask);
+                if(inliers>=min_matches_){cv::cv2eigen(R_cv,rotation);tvec=Eigen::Vector3d(t_cv.at<double>(0),t_cv.at<double>(1),t_cv.at<double>(2));rpy=rotationMatrixToRPY(rotation);pose_valid=true;}
+            }
+            if(pose_valid&&num_stereo_matches>=6){
+                std::vector<cv::Point3d> points_3d;triangulatePoints(left_pts,right_pts,points_3d);
+                if(points_3d.size()>=6){
+                    std::vector<cv::Point2f> image_pts;std::vector<cv::Point3f> object_pts;for(size_t i=0;i<points_3d.size();i++){object_pts.push_back(cv::Point3f(points_3d[i].x,points_3d[i].y,points_3d[i].z));image_pts.push_back(left_pts[i]);}
+                    cv::Mat rvec,tvec_pnp;cv::solvePnP(object_pts,image_pts,K_,dist_coeffs_,rvec,tvec_pnp,false,cv::SOLVEPNP_ITERATIVE);
+                    cv::Mat R_pnp;cv::Rodrigues(rvec,R_pnp);cv::cv2eigen(R_pnp,rotation);tvec=Eigen::Vector3d(tvec_pnp.at<double>(0),tvec_pnp.at<double>(1),tvec_pnp.at<double>(2));
+                    rpy=rotationMatrixToRPY(rotation);successful_tracks++;}
+            }
+            {std::lock_guard<std::mutex> l(imu_mutex_);
+                if(!gravity_initialized_&&imu_count_>10){gravity_world_=Eigen::Vector3d(last_imu_.accel.x(),last_imu_.accel.y(),last_imu_.accel.z());gravity_initialized_=true;RCLCPP_INFO(this->get_logger(),"Gravity");}
+                auto current_time=this->now();double dt_imu=(current_time-cycle_start).seconds();if(dt_imu<=0)dt_imu=0.033;
+                Eigen::Vector3d accel_comp=last_imu_.accel;if(gravity_comp_)accel_comp=accel_comp-gravity_world_;
+                velocity+=accel_comp*dt_imu;velocity*=0.995;position+=velocity*dt_imu;}
+            {std::lock_guard<std::mutex> l(imu_mutex_);pose_kf_.predict(last_imu_.accel,last_imu_.gyro,0.033);}
+            if(pose_valid)pose_kf_.updateVision(tvec,rpy);
+            position=pose_kf_.getPosition();velocity=pose_kf_.getVelocity();orientation=Eigen::Quaterniond(rotation);
+            auto current_time=this->now();nav_msgs::msg::Odometry odom_msg;
+            odom_msg.header.stamp=current_time;odom_msg.header.frame_id="odom";odom_msg.child_frame_id="base_link";
+            odom_msg.pose.pose.position.x=position.x();odom_msg.pose.pose.position.y=position.y();odom_msg.pose.pose.position.z=position.z();
+            odom_msg.pose.pose.orientation.x=orientation.x();odom_msg.pose.pose.orientation.y=orientation.y();
+            odom_msg.pose.pose.orientation.z=orientation.z();odom_msg.pose.pose.orientation.w=orientation.w();
+            for(int i=0;i<6;i++){odom_msg.pose.covariance[i*7]=0.01;}
+            odom_msg.twist.twist.linear.x=velocity.x();odom_msg.twist.twist.linear.y=velocity.y();odom_msg.twist.twist.linear.z=velocity.z();
+            {std::lock_guard<std::mutex> l(imu_mutex_);
+                Eigen::Vector3d gb=pose_kf_.getGyroBias();Eigen::Vector3d gc=last_imu_.gyro-gb;
+                odom_msg.twist.twist.angular.x=gc.x();odom_msg.twist.twist.angular.y=gc.y();odom_msg.twist.twist.angular.z=gc.z();}
+            for(int i=0;i<6;i++){odom_msg.twist.covariance[i*7]=0.01;}
+            odom_pub_->publish(odom_msg);
+            geometry_msgs::msg::TransformStamped t;t.header.stamp=current_time;t.header.frame_id="world";t.child_frame_id="camera_link";
+            t.transform.translation.x=position.x();t.transform.translation.y=position.y();t.transform.translation.z=position.z();
+            t.transform.rotation.x=orientation.x();t.transform.rotation.y=orientation.y();t.transform.rotation.z=orientation.z();t.transform.rotation.w=orientation.w();
+            tf_broadcaster_->sendTransform(t);
+            geometry_msgs::msg::TransformStamped t2;t2.header.stamp=current_time;t2.header.frame_id="odom";t2.child_frame_id="base_link";
+            t2.transform.translation.x=position.x();t2.transform.translation.y=position.y();t2.transform.translation.z=position.z();
+            t2.transform.rotation.x=orientation.x();t2.transform.rotation.y=orientation.y();t2.transform.rotation.z=orientation.z();t2.transform.rotation.w=orientation.w();
+            tf_broadcaster_->sendTransform(t2);
+            vio_cycles++;if(vio_cycles%30==0){RCLCPP_INFO(this->get_logger(),"VIO %d Feat %d P[%.3f,%.3f,%.3f]V[%.3f,%.3f,%.3f]PN:%d",vio_cycles,num_stereo_matches,position.x(),position.y(),position.z(),velocity.x(),velocity.y(),velocity.z(),successful_tracks);}
+            if(vio_cycles%300==0){std::lock_guard<std::mutex> l(imu_mutex_);RCLCPP_INFO(this->get_logger(),"[STATS] IMU:%ld KF_var:%.4f GB[%.4f,%.4f,%.4f]",imu_count_,pose_kf_.getPosition()(0),pose_kf_.getGyroBias().x(),pose_kf_.getGyroBias().y(),pose_kf_.getGyroBias().z());}
+            prev_left=left_img.clone();prev_right=right_img.clone();prev_left_pts=left_pts;
+            if(first_frame){first_frame=false;if(!left_pts.empty())prev_left_pts=left_pts;}
+            rate.sleep();}
+    }
+    void stereoMatching(const cv::Mat& l,const cv::Mat& r,const std::vector<cv::KeyPoint>& kptsl,const std::vector<cv::KeyPoint>& kptsr,const cv::Mat& descl,const cv::Mat& descrc,std::vector<cv::DMatch>& matches){
+        matches.clear();if(descl.empty()||descrc.empty())return;
+        std::vector<std::vector<cv::DMatch>> knn_matches;matcher_->knnMatch(descl,descrc,knn_matches,2);
+        const float ratio_thresh=0.75f;for(size_t i=0;i<knn_matches.size();i++){if(knn_matches[i].size()==2&&knn_matches[i][0].distance<ratio_thresh*knn_matches[i][1].distance){matches.push_back(knn_matches[i][0]);}}
+        std::vector<cv::DMatch> fm;for(const auto& m:matches){if(std::abs(kptsl[m.queryIdx].pt.y-kptsr[m.trainIdx].pt.y)<2.0){fm.push_back(m);}}matches=fm;}
+    void triangulatePoints(const std::vector<cv::Point2f>& left_pts,const std::vector<cv::Point2f>& right_pts,std::vector<cv::Point3d>& points_3d){
+        points_3d.clear();if(left_pts.size()!=right_pts.size()||left_pts.size()<1)return;
+        cv::Mat P1=K_*cv::Mat::eye(3,4,CV_64F);
+        cv::Mat P2=K_*(cv::Mat_<double>(3,4)<<1,0,0,-focal_length_*stereo_baseline_,0,1,0,0,0,0,1,0);
+        cv::Mat_<double> pl(left_pts),pr(right_pts);cv::Mat points_4d;cv::triangulatePoints(P1,P2,pl.reshape(2),pr.reshape(2),points_4d);
+        for(int i=0;i<points_4d.cols;i++){double w=points_4d.at<double>(3,i);if(std::abs(w)>1e-6){double x=points_4d.at<double>(0,i)/w;double y=points_4d.at<double>(1,i)/w;double z=points_4d.at<double>(2,i)/w;if(z>0.1&&z<20.0&&std::abs(x)<10.0&&std::abs(y)<10.0){points_3d.push_back(cv::Point3d(x,y,z));}}}}
+    Eigen::Vector3d rotationMatrixToRPY(const Eigen::Matrix3d& R){Eigen::Vector3d rpy;rpy.x()=std::atan2(R(2,1),R(2,2));rpy.y()=std::atan2(-R(2,0),std::sqrt(R(2,1)*R(2,1)+R(2,2)*R(2,2)));rpy.z()=std::atan2(R(1,0),R(0,0));return rpy;}
+    std::shared_ptr<image_transport::ImageTransport> image_transport_;image_transport::Subscription image_sub_left_,image_sub_right_;
+    rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
+    std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;std::mutex buffer_mutex_;cv::Mat left_buffer_,right_buffer_;
+    std::mutex imu_mutex_;std::deque<ImuData> imu_buffer_;ImuData last_imu_;bool gravity_initialized_=false;Eigen::Vector3d gravity_world_;long imu_count_=0;
+    double stereo_baseline_,focal_length_;cv::Mat K_,dist_coeffs_;cv::Ptr<cv::Feature2D> detector_;cv::Ptr<cv::BFMatcher> matcher_;int max_features_,min_matches_;double ransac_thresh_;bool gravity_comp_;
+    PoseKalmanFilter pose_kf_;std::thread vio_thread_;std::atomic<bool> running_{true};
+};
+int main(int argc,char* argv[]){rclcpp::init(argc,argv);rclcpp::spin(std::make_shared<VIOWrapper>());rclcpp::shutdown();return 0;}
+
+VIOWrapper::VIOWrapper()
+  : Node(

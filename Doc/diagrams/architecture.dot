@@ -1,0 +1,17 @@
+digraph Architecture {
+    rankdir=TB;
+    node [shape=box];
+
+    Sensors [label="Sensors\n(Stereo Cameras, IMU)"];
+    Nav [label="Nav Agent\n(VIO)"];
+    Savepoint [label="Savepoint Agent\n(VPR)"];
+    EKF [label="Fusion\n(EKF)"];
+    Mission [label="Mission Agent"];
+
+    Sensors -> Nav;
+    Sensors -> Savepoint;
+    Nav -> EKF [label="/odom/vio_high_freq"];
+    Savepoint -> EKF [label="/localization/landmark_fix"];
+    EKF -> Mission [label="/odometry/global_filtered"];
+    Mission -> "Flight Controller" [label="/cmd_vel"];
+}

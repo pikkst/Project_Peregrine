@@ -1,0 +1,50 @@
+# VPR Model Configuration
+# Visual Place Recognition model settings
+
+model:
+  # Model type
+  type: "deep_learning"
+  
+  # Path to pre-trained model
+  model_path: "${PROJECT_DIR}/models/vpr_model.bin"
+  
+  # Model parameters
+  embedding_dim: 512
+  input_size: [224, 224]
+  
+  # Feature extraction
+  backbone: "resnet50"
+  
+  # Database settings
+  database:
+    capacity: 10000
+    distance_metric: "L2"
+    search_method: "brute_force"
+  
+  # Matching threshold
+  match_threshold: 0.75
+  
+  # Min matches required
+  min_matches: 10
+
+# Training settings (for reference)
+training:
+  batch_size: 32
+  learning_rate: 0.0001
+  epochs: 100
+  
+# Dataset settings
+dataset:
+  name: "peregrine_dataset"
+  num_classes: 50
+  
+# Hardware settings
+hardware:
+  use_gpu: true
+  gpu_id: 0
+  num_threads: 4
+
+# Logging
+logging:
+  enabled: true
+  log_level: "INFO"

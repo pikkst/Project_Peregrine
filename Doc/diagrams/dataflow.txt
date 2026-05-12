@@ -1,0 +1,15 @@
+AirSim (Windows)
+   ├── RGB / Depth / Segmentation / IMU
+   ▼
+ROS2 Bridge (WSL2)
+   ├── /camera/left/image_raw
+   ├── /camera/right/image_raw
+   └── /imu
+   ▼
+Nav Agent + Savepoint Agent
+   ▼
+EKF Fusion
+   ▼
+Mission Agent
+   ▼
+/cmd_vel → Drone

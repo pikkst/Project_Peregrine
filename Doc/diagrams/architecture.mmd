@@ -1,0 +1,64 @@
+flowchart TB
+    subgraph Sensors[" "]
+        direction TB
+        Stereo["📷 Stereo Cameras"]
+        IMU["📊 IMU"]
+    end
+
+    subgraph Simulation["Simulation Environment"]
+        direction TB
+        UE["Unreal Engine"]
+        AirSim["AirSim"]
+        ML["ML Pipeline\n(training/inference)"]
+    end
+
+    subgraph Peregrine["Peregrine System"]
+        direction TB
+        subgraph ROS2["ROS2 Nodes"]
+            direction LR
+            Nav["🟦 Nav Agent\n(VIO)\nC++"]
+            Savepoint["🟨 Savepoint Agent\n(VPR)\nPython"]
+            Mission["🟨 Mission Agent\n(waypoint)\nPython"]
+            EKF["🟥 Fusion\n(EKF)\nrobot_localization"]
+        end
+        FC["Flight Controller"]
+    end
+
+    %% Sensor data flow
+    Stereo -->|image_raw| Nav
+    IMU -->|imu/data| Nav
+    Nav -->|odom/vio_high_freq| EKF
+    Stereo -->|image_raw| Savepoint
+    Savepoint -->|localization/landmark_fix| EKF
+
+    %% EKF fusion to mission
+    EKF -->|odometry/global_filtered| Mission
+
+    %% Mission control
+    Mission -->|cmd_vel| FC
+
+    %% External connections
+    UE <-->|AirSim API| AirSim
+    AirSim -->|sim/sensor_data| Stereo
+    AirSim -->|sim/imu_data| IMU
+    AirSim -->|sim/ground_truth| EKF
+
+    %% ML Pipeline connections
+    ML -->|model/vio_weights| Nav
+    ML -->|model/vpr_features| Savepoint
+    Nav -->|training/vio_data| ML
+    Savepoint -->|training/vpr_data| ML
+
+    classDef sensor fill:#e1f5fe,stroke:#01579b
+    classDef simulation fill:#f3e5f5,stroke:#4a148c
+    classDef nav fill:#2196f3,color:#fff
+    classDef python fill:#ffeb3b
+    classDef ekf fill:#f44336,color:#fff
+    classDef fc fill:#4caf50,color:#fff
+
+    class Stereo,IMU sensor
+    class UE,AirSim,ML simulation
+    class Nav nav
+    class Savepoint,Mission,ML python
+    class EKF ekf
+    class FC fc

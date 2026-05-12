@@ -1,0 +1,88 @@
+# EKF Configuration File
+# Extended Kalman Filter settings for state estimation
+
+ekf_filter_node:
+  ros__parameters:
+    # EKF Parameters
+    frequency: 30.0
+    
+    # Topics
+    map_frame: "map"
+    odom_frame: "odom"
+    base_link_frame: "base_link"
+    
+    # IMU topic
+    imu_topic: "/sensors/imu"
+    
+    # GNSS/GPS topic
+    gps_topic: "/sensors/gps"
+    
+    # Wheel odometry topic
+    wheel_odom_topic: "/sensors/wheel_odom"
+    
+    # VIO topic
+    vio_topic: "/vio/pose"
+    
+    # Output topics
+    pose_output_topic: "/estimation/pose"
+    twist_output_topic: "/estimation/twist"
+    odom_output_topic: "/estimation/odometry"
+    
+    # Sensor update settings
+    use_imu: true
+    use_gps: true
+    use_wheel_odom: true
+    use_vio: true
+    
+    # Process noise
+    process_noise_covariance:
+      - [0.05, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      - [0, 0.05, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      - [0, 0, 0.05, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      - [0, 0, 0, 0.05, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0.05, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0, 0.05, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0, 0, 0.05, 0, 0, 0, 0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0, 0, 0, 0.05, 0, 0, 0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0, 0, 0, 0, 0.05, 0, 0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0, 0, 0, 0, 0, 0.05, 0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.05, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.05, 0, 0, 0]
+      - [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.05, 0, 0]
+      - [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.05, 0]
+      - [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.05]
+    
+    # Initial covariance
+    initial_estimate_covariance:
+      - [10.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      - [0, 10.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      - [0, 0, 10.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      - [0, 0, 0, 10.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 10.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0, 10.0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0, 0, 10.0, 0, 0, 0, 0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0, 0, 0, 10.0, 0, 0, 0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0, 0, 0, 0, 10.0, 0, 0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0, 0, 0, 0, 0, 10.0, 0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10.0, 0, 0, 0, 0]
+      - [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10.0, 0, 0, 0]
+      - [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10.0, 0, 0]
+      - [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10.0, 0]
+      - [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10.0]
+    
+    # Sensor noise parameters
+    imu_acceleration_noise: 0.01
+    imu_angular_velocity_noise: 0.001
+    imu_acceleration_bias_noise: 0.0001
+    imu_angular_velocity_bias_noise: 1.0e-6
+    
+    gps_noise: 0.1
+    wheel_odom_noise: 0.05
+    vio_noise: 0.05
+    
+    # Transform tolerance
+    transform_timeout: 0.1
+    
+    # Diagnostics
+    publish_diagnostics: true
+    diagnostics_period: 1.0

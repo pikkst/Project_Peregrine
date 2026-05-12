@@ -1,0 +1,4 @@
+Nav Agent ──────► EKF ◄────── Savepoint Agent
+   │                │
+   │                ▼
+   └────────────► Mission Agent ──────► /cmd_vel

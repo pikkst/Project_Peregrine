@@ -1,0 +1,14 @@
+digraph Agents {
+    rankdir=LR;
+    node [shape=box];
+
+    Nav [label="Nav Agent"];
+    Savepoint [label="Savepoint Agent"];
+    EKF [label="EKF"];
+    Mission [label="Mission Agent"];
+
+    Nav -> EKF [label="/odom/vio_high_freq"];
+    Savepoint -> EKF [label="/localization/landmark_fix"];
+    EKF -> Mission [label="/odometry/global_filtered"];
+    Mission -> "Drone" [label="/cmd_vel"];
+}

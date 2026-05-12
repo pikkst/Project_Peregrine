@@ -1,0 +1,87 @@
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node modules
+node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+*.so
+
+# C++
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.pdb
+*.idb
+*.pch
+*.vspscc
+*.vssscc
+
+# ROS 2
+*.log
+.ros/
+ros2*.log
+
+# ROS 2 workspace aggregated build artifacts
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# AirSim
+ros2_ws/src/sim/data_collection/output/
+ros2_ws/src/sim/savepoint_database/
+
+# Virtualenv
+venv/
+env/
+.venv/
+
+# ML datasets
+ml/datasets/raw/
+ml/datasets/processed/
+
+# Training outputs
+training/
+runs/
+outputs/
+experiments/
+lightning_logs/
+
+# Unreal
+unreal/Saved/
+unreal/Binaries/
+unreal/Intermediate/
+unreal/AirSim/
+unreal/Plugins/AirSim/Content/
+unreal/Plugins/AirSim/Binaries/
+unreal/Plugins/AirSim/Intermediate/
+unreal/Plugins/AirSim/Source/AirLib/lib/
+*.uasset
+*.umap
+
+# UI build
+ui/dist/
+ui/node_modules/
+
+# SayDeploy
+.saydeploy/
+
+# Build
+build/
+dist/

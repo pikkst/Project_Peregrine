@@ -1,0 +1,30 @@
+Peregrine System Architecture
+==============================
+
+Data flow directions:
+---------------------
+1. Simulated environment : Unreal Engine -> AirSim -> Sensors (Stereo camera, IMU)
+2. Image data            : Stereo camera -> Nav Agent (VIO) + Savepoint Agent (VPR)
+3. IMU data              : IMU -> Nav Agent (VIO)
+4. High-freq odometry    : Nav Agent -> EKF  (/odom/vio_high_freq)
+5. Landmark corrections  : Savepoint Agent -> EKF  (/localization/landmark_fix)
+6. Filtered odometry     : EKF -> Mission Agent  (/odometry/filtered)
+7. Velocity commands     : Mission Agent -> Flight Controller  (/cmd_vel)
+
+ROS 2 topics:
+-------------
+/airsim/camera/front_left/image_raw  - Stereo camera images  (AirSim bridge)
+/airsim/imu                          - IMU measurements       (AirSim bridge)
+/odom/vio_high_freq                  - VIO odometry           (Nav Agent -> EKF)
+/localization/landmark_fix           - Pose corrections       (Savepoint Agent -> EKF)
+/odometry/filtered                   - Fused global odometry  (EKF -> Mission Agent)
+/cmd_vel                             - Velocity commands      (Mission Agent -> Flight Controller)
+
+External interfaces:
+--------------------
+1. Unreal Engine <-> AirSim  : AirSim plugin provides physics simulation inside Unreal
+2. AirSim -> Sensors         : Publishes simulated camera and IMU data via ROS 2 bridge
+3. AirSim -> EKF             : Ground-truth poses available for validation and training
+4. ML Pipeline <-> Agents    :
+   - Training   : Nav Agent and Savepoint Agent supply data to ML pipeline
+   - Inference  : ML pipeline provides model weights and feature descriptors

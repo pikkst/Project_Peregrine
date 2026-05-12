@@ -1,0 +1,94 @@
+# VIO Configuration File
+# VIO (Visual Inertial Odometry) settings for the peregrine system
+
+# Camera parameters
+camera:
+  type: "pinhole"
+  width: 1920
+  height: 1080
+  
+  # Intrinsic parameters
+  fx: 1200.0
+  fy: 1200.0
+  cx: 960.0
+  cy: 540.0
+  
+  # Distortion coefficients
+  k1: 0.1
+  k2: -0.1
+  p1: 0.001
+  p2: -0.001
+  k3: 0.0
+
+# IMU parameters
+imu:
+  # Update rate in Hz
+  rate: 200.0
+  
+  # Noise parameters
+  acc_noise_density: 1.0e-3
+  acc_bias_random_walk: 1.0e-4
+  gyro_noise_density: 1.0e-4
+  gyro_bias_random_walk: 1.0e-5
+  
+  # Time offset between camera and IMU
+  time_offset: 0.0
+
+# VIO algorithm parameters
+vio:
+  # Feature tracking
+  max_features: 200
+  min_features: 60
+  quality_level: 0.01
+  min_distance: 30
+  
+  # Keyframe selection
+  keyframe_frequency: 2.0
+  
+  # Optimization
+  max_iterations: 50
+  convergence_threshold: 1.0e-6
+  
+  # Noise parameters
+  pixel_noise: 1.0
+  huber_threshold: 1.0
+
+# Filter parameters
+filter:
+  # Enable EKF
+  enable_ekf: true
+  
+  # State vector dimension
+  state_dim: 15
+  
+  # Process noise
+  position_noise: 1.0e-4
+  velocity_noise: 1.0e-2
+  attitude_noise: 1.0e-3
+  bias_acc_noise: 1.0e-5
+  bias_gyro_noise: 1.0e-6
+  
+  # Measurement noise
+  position_measurement_noise: 1.0
+  velocity_measurement_noise: 0.5
+  attitude_measurement_noise: 0.1
+
+# Output settings
+output:
+  # Publish frequency
+  frequency: 100.0
+  
+  # Topics
+  pose_topic: "/vio/pose"
+  twist_topic: "/vio/twist"
+  
+  # Frame IDs
+  child_frame_id: "base_link"
+  map_frame_id: "map"
+  odometry_frame_id: "odom"
+  
+# Debug settings
+debug:
+  enabled: false
+  save_trajectory: false
+  log_level: "INFO"

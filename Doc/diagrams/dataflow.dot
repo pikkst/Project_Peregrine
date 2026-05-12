@@ -1,0 +1,19 @@
+digraph Dataflow {
+    rankdir=LR;
+    node [shape=box];
+
+    AirSim [label="AirSim (Windows)"];
+    Bridge [label="ROS2 Bridge (WSL2)"];
+    Nav [label="Nav Agent"];
+    Savepoint [label="Savepoint Agent"];
+    EKF [label="EKF"];
+    Mission [label="Mission Agent"];
+
+    AirSim -> Bridge [label="RGB/Depth/Seg/IMU"];
+    Bridge -> Nav [label="/camera/*, /imu"];
+    Bridge -> Savepoint [label="/camera/*"];
+    Nav -> EKF [label="/odom/vio_high_freq"];
+    Savepoint -> EKF [label="/localization/landmark_fix"];
+    EKF -> Mission [label="/odometry/global_filtered"];
+    Mission -> "Drone" [label="/cmd_vel"];
+}
